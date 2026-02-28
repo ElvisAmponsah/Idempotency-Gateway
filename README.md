@@ -132,7 +132,7 @@ sequenceDiagram
     end
 ```
 
-## Explaining `asyncio.Event()` for Interviews
+## Explaining `asyncio.Event()`
 
 The requirement to handle an "In-Flight" race condition (US6) means handling the split-second when Request B arrives before Request A has actually finished processing. 
 
