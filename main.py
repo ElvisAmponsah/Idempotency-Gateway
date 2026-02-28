@@ -3,12 +3,7 @@ from pydantic import BaseModel
 import asyncio
 import time
 import uuid
-
-app = FastAPI(
-    title="Idempotency-Gateway",
-    description="A simple FastAPI gateway demonstrating idempotency.",
-    version="1.0.0"
-)
+from contextlib import asynccontextmanager
 
 # In-memory storage for idempotency keys.
 # Structure: 
@@ -33,25 +28,40 @@ CLEANUP_INTERVAL_SECONDS = 60 * 60  # Run cleanup every hour
 
 async def cleanup_expired_keys():
     """Background task to remove expired idempotency keys from memory."""
-    while True:
-        await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
-        current_time = time.time()
-        # Find keys that have expired
-        keys_to_delete = [
-            key for key, data in idempotency_store.items()
-            if current_time - data["created_at"] > EXPIRY_SECONDS
-        ]
-        # Delete the expired keys
-        for key in keys_to_delete:
-            del idempotency_store[key]
-        if keys_to_delete:
-            print(f"Cleaned up {len(keys_to_delete)} expired idempotency keys.")
-
-@app.on_event("startup")
-async def startup_event():
-    """Start the background cleanup task when the application starts."""
-    asyncio.create_task(cleanup_expired_keys())
+    try:
+        while True:
+            await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
+            current_time = time.time()
+            # Find keys that have expired
+            keys_to_delete = [
+                key for key, data in idempotency_store.items()
+                if current_time - data["created_at"] > EXPIRY_SECONDS
+            ]
+            # Delete the expired keys
+            for key in keys_to_delete:
+                del idempotency_store[key]
+            if keys_to_delete:
+                print(f"Cleaned up {len(keys_to_delete)} expired idempotency keys.")
+    except asyncio.CancelledError:
+        # Task was cancelled gracefully during application shutdown
+        pass
 # -----------------------------------------------------
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager to handle background tasks on startup/shutdown."""
+    # Startup: Start the background cleanup task
+    cleanup_task = asyncio.create_task(cleanup_expired_keys())
+    yield
+    # Shutdown: Clean up the task gracefully
+    cleanup_task.cancel()
+
+app = FastAPI(
+    title="Idempotency-Gateway",
+    description="A simple FastAPI gateway demonstrating idempotency.",
+    version="1.0.0",
+    lifespan=lifespan
+)
 
 class PaymentRequest(BaseModel):
     amount: float
@@ -89,7 +99,16 @@ async def process_payment(
             # This blocks execution here until `cached_data["event"].set()` is called by Request A.
             await cached_data["event"].wait()
             
-        # At this point, the original request has finished processing.
+            # STRICT REVIEW FIX: If Request A crashed with an exception, it still triggered
+            # `event.set()` in its finally block to prevent Request B from hanging infinitely.
+            # However, Request A failed to save the "response". We must catch this edge case!
+            if "response" not in cached_data:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="The original request failed during processing. Please try again."
+                )
+            
+        # At this point, the original request has finished processing gracefully.
         # US2 (Duplicate): Exact same request and key. Return saved response.
         response.status_code = cached_data["status_code"]
         response.headers["X-Cache-Hit"] = "true"
