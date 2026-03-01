@@ -18,7 +18,7 @@ A lightweight, zero-dependency (other than FastAPI/Uvicorn) gateway application 
 1. Clone the repository and navigate to the project directory:
    ```bash
    cd Idempotency-Gateway
-   ```
+**   ```
 2. Create and activate a virtual environment:
    ```bash
    python -m venv venv
@@ -31,6 +31,7 @@ A lightweight, zero-dependency (other than FastAPI/Uvicorn) gateway application 
    ```bash
    pip install -r requirements.txt
    ```
+ 
 
 ### Running the Server
 Start the FastAPI server using Uvicorn:
@@ -38,6 +39,20 @@ Start the FastAPI server using Uvicorn:
 uvicorn main:app --reload
 ```
 The API will be available at `http://localhost:8000`. You can also view the interactive Swagger documentation at `http://localhost:8000/docs`.
+
+
+  Alternatively:
+
+  1. Open PowerShell and go to your folder:
+  cd Idempotency-Gateway
+
+2. Turn on your virtual environment:
+venv\Scripts\activate
+
+3. Start the server:
+python -m uvicorn main:app --reload
+4.   Go straight to the visual dashboard:
+http://127.0.0.1:8000/docs
 
 ## API Documentation
 
@@ -94,7 +109,7 @@ curl -X POST http://localhost:8000/process-payment \
 
 In-memory dictionaries will grow infinitely as new `Idempotency-Key`s are received, eventually causing an Out-Of-Memory (OOM) crash in a production environment. To solve this, I implemented an asynchronous background task (`cleanup_expired_keys`) that starts when the application launches (`@app.on_event("startup")`).
 
-Every hour, it scans the `idempotency_store` and removes any keys created more than 24 hours ago. This guarantees that old keys are naturally garbage-collected, preventing a memory leak while remaining pure Python library code without the need for periodic cron tasks or tools like Redis TTLs.
+Every hour, it scans the `idempotency_store` and removes any keys created more than 24 hours ago. This guarantees that old keys are naturally garbage-collected, preventing a memory leak while remaining pure Python library code without the need for periodic cron tasks or tools like Redis TTLs.**
 
 ## Sequence Diagram: Idempotency Logic Flow
 
